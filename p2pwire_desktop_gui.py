@@ -1,5 +1,6 @@
-# P2Pwire Premium Desktop GUI Client (CustomTkinter)
+# P2Pwire Premium Desktop GUI Client (Threaded Low-Latency Engine)
 # Run: pip install customtkinter soundcard numpy websockets
+
 import customtkinter as ctk
 import asyncio
 import threading
@@ -44,7 +45,7 @@ class P2PwireApp(ctk.CTk):
         self.btn_toggle = ctk.CTkButton(self, text="🔊 Start Streaming System Audio", command=self.toggle_stream, height=45, fg_color="#06B6D4", hover_color="#0891B2", font=ctk.CTkFont(size=14, weight="bold"))
         self.btn_toggle.pack(fill="x", padx=30, pady=10)
 
-        # Log box for debugging
+        # Log box for live status
         self.log_box = ctk.CTkTextbox(self, height=80, font=ctk.CTkFont(size=11), text_color="#38BDF8")
         self.log_box.pack(fill="x", padx=30, pady=(0, 15))
         self.log_box.insert("0.0", "Logs & Connection Status will appear here...\n")
@@ -78,7 +79,6 @@ class P2PwireApp(ctk.CTk):
             uri = f"ws://{ip}:8080/ws/upload_audio"
             try:
                 self.log(f"Opening WebSocket connection to {uri}...")
-                # Disable ping timeout to prevent disconnect during silent periods or network jitter
                 async with websockets.connect(uri, ping_interval=None, ping_timeout=None) as ws:
                     self.after(0, lambda: self.status_label.configure(text="● Connected! Initializing Audio Loopback...", text_color="#34D399"))
                     self.log("WebSocket connection established successfully!")
@@ -89,19 +89,42 @@ class P2PwireApp(ctk.CTk):
                     self.log("Loopback audio capture device initialized successfully.")
                     
                     self.after(0, lambda: self.status_label.configure(text="● Streaming Live 48kHz System Audio...", text_color="#34D399"))
+                    
+                    # Decoupled Queue: Network delay audio recording ko rokega nahi
+                    audio_queue = asyncio.Queue(maxsize=20)
+                    
+                    # OS Background Thread for 48kHz audio capture (480 frames = 10ms per chunk)
+                    def audio_producer():
+                        try:
+                            with mic.recorder(samplerate=48000, channels=2) as recorder:
+                                while self.is_streaming:
+                                    data = recorder.record(numframes=480)
+                                    mono = np.mean(data, axis=1)
+                                    d = np.clip(mono, -1.0, 1.0)
+                                    pcm16 = (d * 32767).astype(np.int16).tobytes()
+                                    
+                                    # If network is slow, drop oldest packet to eliminate buffer delay
+                                    if audio_queue.full():
+                                        try:
+                                            audio_queue.get_nowait()
+                                        except Exception:
+                                            pass
+                                    self.loop.call_soon_threadsafe(audio_queue.put_nowait, pcm16)
+                        except Exception as capture_err:
+                            self.log(f"[CAPTURE ERROR] {capture_err}")
+
+                    capture_thread = threading.Thread(target=audio_producer, daemon=True)
+                    capture_thread.start()
+                    
                     seq = 0
-                    # Use smaller chunk size (256 frames) and stereo channels=2 downmixed to smooth out stutter ("jatke")
-                    with mic.recorder(samplerate=48000, channels=2) as recorder:
-                        while self.is_streaming:
-                            data = recorder.record(numframes=256)
-                            mono = np.mean(data, axis=1)
-                            d = np.clip(mono, -1.0, 1.0)
-                            pcm16 = (d * 32767).astype(np.int16).tobytes()
-                            h = bytearray(8)
-                            h[0], h[1], h[2] = 0xAB, 0x46, 0x01
-                            h[3], h[4] = (seq >> 8) & 0xFF, seq & 0xFF
-                            seq = (seq + 1) & 0xFFFF
-                            await ws.send(bytes(h) + pcm16)
+                    while self.is_streaming:
+                        pcm16 = await audio_queue.get()
+                        h = bytearray(8)
+                        h[0], h[1], h[2] = 0xAB, 0x46, 0x01
+                        h[3], h[4] = (seq >> 8) & 0xFF, seq & 0xFF
+                        seq = (seq + 1) & 0xFFFF
+                        await ws.send(bytes(h) + pcm16)
+
             except Exception as e:
                 err_msg = str(e)
                 self.log(f"[ERROR] {err_msg}")
