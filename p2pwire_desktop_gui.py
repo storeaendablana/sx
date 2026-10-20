@@ -22,7 +22,7 @@ class P2PwireApp(ctk.CTk):
         self.loop = None
         self.thread = None
 
-        self.title_label = ctk.CTkLabel(self, text="?? P2Pwire System Audio Bridge", font=ctk.CTkFont(size=18, weight="bold"))
+        self.title_label = ctk.CTkLabel(self, text="🚀 P2Pwire System Audio Bridge", font=ctk.CTkFont(size=18, weight="bold"))
         self.title_label.pack(pady=(20, 10))
 
         self.subtitle_label = ctk.CTkLabel(self, text="Stream 100% pure system audio to your Android phone", font=ctk.CTkFont(size=12), text_color="#94A3B8")
@@ -38,10 +38,10 @@ class P2PwireApp(ctk.CTk):
         self.ip_entry.pack(fill="x", pady=(5, 0))
         self.ip_entry.insert(0, "192.168.43.1")
 
-        self.status_label = ctk.CTkLabel(self, text="? Status: Ready to Connect", font=ctk.CTkFont(size=12, weight="bold"), text_color="#FBBF24")
+        self.status_label = ctk.CTkLabel(self, text="● Status: Ready to Connect", font=ctk.CTkFont(size=12, weight="bold"), text_color="#FBBF24")
         self.status_label.pack(pady=12)
 
-        self.btn_toggle = ctk.CTkButton(self, text="?? Start Streaming System Audio", command=self.toggle_stream, height=45, fg_color="#06B6D4", hover_color="#0891B2", font=ctk.CTkFont(size=14, weight="bold"))
+        self.btn_toggle = ctk.CTkButton(self, text="🔊 Start Streaming System Audio", command=self.toggle_stream, height=45, fg_color="#06B6D4", hover_color="#0891B2", font=ctk.CTkFont(size=14, weight="bold"))
         self.btn_toggle.pack(fill="x", padx=30, pady=10)
 
         # Log box for debugging
@@ -58,19 +58,19 @@ class P2PwireApp(ctk.CTk):
         if not self.is_streaming:
             ip = self.ip_entry.get().strip()
             if not ip:
-                self.status_label.configure(text="? Error: Enter valid IP address", text_color="#F87171")
+                self.status_label.configure(text="● Error: Enter valid IP address", text_color="#F87171")
                 return
             self.is_streaming = True
-            self.btn_toggle.configure(text="?? Stop Streaming", fg_color="#EF4444", hover_color="#DC2626")
-            self.status_label.configure(text=f"? Connecting to {ip}...", text_color="#22D3EE")
+            self.btn_toggle.configure(text="⏹️ Stop Streaming", fg_color="#EF4444", hover_color="#DC2626")
+            self.status_label.configure(text=f"● Connecting to {ip}...", text_color="#22D3EE")
             self.log(f"Attempting connection to ws://{ip}:8080/ws/upload_audio...")
             
             self.thread = threading.Thread(target=self.run_async_stream, args=(ip,), daemon=True)
             self.thread.start()
         else:
             self.is_streaming = False
-            self.btn_toggle.configure(text="?? Start Streaming System Audio", fg_color="#06B6D4", hover_color="#0891B2")
-            self.status_label.configure(text="? Status: Disconnected", text_color="#FBBF24")
+            self.btn_toggle.configure(text="🔊 Start Streaming System Audio", fg_color="#06B6D4", hover_color="#0891B2")
+            self.status_label.configure(text="● Status: Disconnected", text_color="#FBBF24")
             self.log("Streaming stopped by user.")
 
     def run_async_stream(self, ip):
@@ -79,7 +79,7 @@ class P2PwireApp(ctk.CTk):
             try:
                 self.log(f"Opening WebSocket connection to {uri}...")
                 async with websockets.connect(uri) as ws:
-                    self.after(0, lambda: self.status_label.configure(text="? Connected! Initializing Audio Loopback...", text_color="#34D399"))
+                    self.after(0, lambda: self.status_label.configure(text="● Connected! Initializing Audio Loopback...", text_color="#34D399"))
                     self.log("WebSocket connection established successfully!")
                     
                     speaker = sc.default_speaker()
@@ -87,12 +87,13 @@ class P2PwireApp(ctk.CTk):
                     mic = sc.get_microphone(id=speaker.name, include_loopback=True)
                     self.log("Loopback audio capture device initialized successfully.")
                     
-                    self.after(0, lambda: self.status_label.configure(text="? Streaming Live 48kHz System Audio...", text_color="#34D399"))
+                    self.after(0, lambda: self.status_label.configure(text="● Streaming Live 48kHz System Audio...", text_color="#34D399"))
                     seq = 0
-                    with mic.recorder(samplerate=48000, channels=1) as recorder:
+                    with mic.recorder(samplerate=48000, channels=2) as recorder:
                         while self.is_streaming:
                             data = recorder.record(numframes=512)
-                            d = np.clip(data[:, 0], -1.0, 1.0)
+                            mono = np.mean(data, axis=1)
+                            d = np.clip(mono, -1.0, 1.0)
                             pcm16 = (d * 32767).astype(np.int16).tobytes()
                             h = bytearray(8)
                             h[0], h[1], h[2] = 0xAB, 0x46, 0x01
@@ -104,7 +105,7 @@ class P2PwireApp(ctk.CTk):
                 self.log(f"[ERROR] {err_msg}")
                 traceback.print_exc()
                 if self.is_streaming:
-                    self.after(0, lambda: self.status_label.configure(text=f"? Error: {err_msg[:35]}", text_color="#F87171"))
+                    self.after(0, lambda: self.status_box.configure(text=f"● Error: {err_msg[:35]}", text_color="#F87171") if hasattr(self, 'status_box') else self.status_label.configure(text=f"● Error: {err_msg[:35]}", text_color="#F87171"))
                     self.after(0, self.toggle_stream)
 
         self.loop = asyncio.new_event_loop()
