@@ -78,7 +78,7 @@ class P2PwireApp(ctk.CTk):
             uri = f"ws://{ip}:8080/ws/upload_audio"
             try:
                 self.log(f"Opening WebSocket connection to {uri}...")
-                # ping_interval=None prevents keepalive timeout disconnects
+                # Disable ping timeout to prevent disconnect during silent periods or network jitter
                 async with websockets.connect(uri, ping_interval=None, ping_timeout=None) as ws:
                     self.after(0, lambda: self.status_label.configure(text="● Connected! Initializing Audio Loopback...", text_color="#34D399"))
                     self.log("WebSocket connection established successfully!")
@@ -90,7 +90,7 @@ class P2PwireApp(ctk.CTk):
                     
                     self.after(0, lambda: self.status_label.configure(text="● Streaming Live 48kHz System Audio...", text_color="#34D399"))
                     seq = 0
-                    # numframes=256 and channels=2 for zero stutter and unsupported format fix
+                    # Use smaller chunk size (256 frames) and stereo channels=2 downmixed to smooth out stutter ("jatke")
                     with mic.recorder(samplerate=48000, channels=2) as recorder:
                         while self.is_streaming:
                             data = recorder.record(numframes=256)
