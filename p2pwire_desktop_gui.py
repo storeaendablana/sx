@@ -78,7 +78,8 @@ class P2PwireApp(ctk.CTk):
             uri = f"ws://{ip}:8080/ws/upload_audio"
             try:
                 self.log(f"Opening WebSocket connection to {uri}...")
-                async with websockets.connect(uri) as ws:
+                # ping_interval=None prevents keepalive timeout disconnects
+                async with websockets.connect(uri, ping_interval=None, ping_timeout=None) as ws:
                     self.after(0, lambda: self.status_label.configure(text="● Connected! Initializing Audio Loopback...", text_color="#34D399"))
                     self.log("WebSocket connection established successfully!")
                     
@@ -89,9 +90,10 @@ class P2PwireApp(ctk.CTk):
                     
                     self.after(0, lambda: self.status_label.configure(text="● Streaming Live 48kHz System Audio...", text_color="#34D399"))
                     seq = 0
+                    # numframes=256 and channels=2 for zero stutter and unsupported format fix
                     with mic.recorder(samplerate=48000, channels=2) as recorder:
                         while self.is_streaming:
-                            data = recorder.record(numframes=512)
+                            data = recorder.record(numframes=256)
                             mono = np.mean(data, axis=1)
                             d = np.clip(mono, -1.0, 1.0)
                             pcm16 = (d * 32767).astype(np.int16).tobytes()
@@ -105,7 +107,7 @@ class P2PwireApp(ctk.CTk):
                 self.log(f"[ERROR] {err_msg}")
                 traceback.print_exc()
                 if self.is_streaming:
-                    self.after(0, lambda: self.status_box.configure(text=f"● Error: {err_msg[:35]}", text_color="#F87171") if hasattr(self, 'status_box') else self.status_label.configure(text=f"● Error: {err_msg[:35]}", text_color="#F87171"))
+                    self.after(0, lambda: self.status_label.configure(text=f"● Error: {err_msg[:35]}", text_color="#F87171"))
                     self.after(0, self.toggle_stream)
 
         self.loop = asyncio.new_event_loop()
